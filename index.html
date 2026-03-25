@@ -1,36 +1,219 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="utf-8">
-    <title>环境监测系统</title>
+<meta charset="utf-8">
+<title>火灾监测系统</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+    body {
+        margin: 0;
+        font-family: Arial;
+        background: #c1d2eb;
+    }
+
+    h1 {
+        text-align: center;
+        margin: 10px 0;
+    }
+
+    .time {
+        text-align: center;
+        font-size: 14px;
+        margin-bottom: 5px;
+    }
+
+    /* ===== 顶部6个数据 ===== */
+    .top {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 10px;
+        padding: 10px;
+    }
+
+    .card {
+        background: white;
+        border-radius: 10px;
+        padding: 10px;
+        text-align: center;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+
+    .title {
+        font-size: 14px;
+        color: #666;
+    }
+
+    .value {
+        font-size: 20px;
+        font-weight: bold;
+        margin-top: 5px;
+    }
+
+    /* ===== 图表区域 ===== */
+    .charts {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);   /* 一行2个 */
+        grid-template-rows: repeat(2, 1fr);      /* 三行 */
+        gap: 0px;
+        padding: 10px;
+        width: 33%;   
+        height: calc(40vh);            /* 控制总高度 */
+    }
+
+    /* 单个图表样式 */
+    .canvas {
+        border: 1px solid #ddd;                 /* 边框 */
+        border-radius: 10px;                    /* 圆角 */
+        background: white;                      /* 白底 */
+        padding: 10px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1); /* 阴影 */
+        width: 100%;
+        height: 100%;
+    }
+</style>
 </head>
+
 <body>
 
-<h1>传感器数据</h1>
+<h1>火灾监测系统</h1>
+<div class="time">最后更新时间：<span id="time">--</span></div>
 
-<p>温度: <span id="temp">--</span></p>
-<p>CO浓度: <span id="co">--</span></p>
-<p>火灾状态: <span id="fire">--</span></p>
+<!-- 顶部6个数据 -->
+<div class="top">
+    <div class="card"><div class="title">温度</div><div id="f1" class="value">--</div></div>
+    <div class="card"><div class="title">CO浓度</div><div id="f2" class="value">--</div></div>
+    <div class="card"><div class="title">火焰传感器</div><div id="f3" class="value">--</div></div>
+    <div class="card"><div class="title">火灾支持度</div><div id="f4" class="value">--</div></div>
+    <div class="card"><div class="title">非火灾支持度</div><div id="f5" class="value">--</div></div>
+    <div class="card"><div class="title">不确定</div><div id="f6" class="value">--</div></div>
+    <div class="card"><div class="title">火灾警报</div><div id="alarm" class="value">无</div>
+</div>
+</div>
+
+<!-- 六个图 -->
+<div class="charts">
+    <canvas id="c1" class="canvas"></canvas>
+    <canvas id="c2" class="canvas"></canvas>
+    <canvas id="c3" class="canvas"></canvas>
+    <canvas id="c4" class="canvas"></canvas>
+    <canvas id="c5" class="canvas"></canvas>
+    <canvas id="c6" class="canvas"></canvas>
+</div>
 
 <script>
 const channelID = "3307131";
+let charts = [];
 
-function getData() {
-    fetch(`https://api.thingspeak.com/channels/${channelID}/feeds/last.json`)
-        .then(response => response.json())
-        .then(data => {
-            document.getElementById("temp").innerText = data.field1;
-            document.getElementById("co").innerText = data.field2;
-            document.getElementById("fire").innerText = data.field3;
-        })
-        .catch(err => console.error(err));
+// 时间格式
+function formatTime(t){
+    return new Date(t).toLocaleString();
 }
 
-// 每5秒刷新一次
-setInterval(getData, 5000);
+// 获取最新顶部数据
+function getData(){
+    fetch(`https://api.thingspeak.com/channels/${channelID}/feeds/last.json`)
+    .then(r => r.json())
+    .then(d => {
 
-// 页面加载先执行一次
+        // ===== 数据处理（缩小1000倍）=====
+        let fire = d.field4 / 1000;
+        let nofire = d.field5 / 1000;
+        let unsure = d.field6 / 1000;
+
+        document.getElementById("f1").innerText = d.field1;
+        document.getElementById("f2").innerText = d.field2;
+        document.getElementById("f3").innerText = d.field3;
+
+        // 显示缩放后的值
+        document.getElementById("f4").innerText = fire.toFixed(3);
+        document.getElementById("f5").innerText = nofire.toFixed(3);
+        document.getElementById("f6").innerText = unsure.toFixed(3);
+
+        document.getElementById("time").innerText = formatTime(d.created_at);
+
+        // ===== 火灾判断逻辑 =====
+        if(fire > 0.75){
+            document.getElementById("alarm").innerText = "警报中";
+            document.body.style.background = "#ff4d4d"; // 红色背景
+        } else {
+            document.getElementById("alarm").innerText = "无";
+            document.body.style.background = "#c1d2eb"; // 原背景
+        }
+    });
+}
+
+// 绘制图表
+function draw(id, label, data, labels, color){
+    return new Chart(document.getElementById(id),{
+        type:'line',
+        data:{
+            labels: labels,
+            datasets:[{
+                label: label,
+                data: data,
+                borderWidth: 2,
+                borderColor: color,
+                backgroundColor: color,
+                tension: 0.1
+            }]
+        },
+        options:{
+            responsive:true,
+            maintainAspectRatio:false,
+            plugins:{
+                legend:{
+                    labels:{ font:{ size:14 } }
+                }
+            },
+            scales:{
+                x:{ ticks:{ font:{ size:14 } } },
+                y:{ ticks:{ font:{ size:15 } } }
+            }
+        }
+    });
+}
+
+// 加载或更新图表数据
+function loadCharts(){
+    fetch(`https://api.thingspeak.com/channels/${channelID}/feeds.json?results=20`)
+    .then(r => r.json())
+    .then(d => {
+        const f = d.feeds;
+        const labels = f.map(i => new Date(i.created_at).toLocaleTimeString());
+        const data = [
+            f.map(i => i.field1),
+            f.map(i => i.field2),
+            f.map(i => i.field3),
+            f.map(i => i.field4 / 1000),
+            f.map(i => i.field5 / 1000),
+            f.map(i => i.field6 / 1000)
+        ];
+        const names = ["温度","CO","火焰","火灾支持度","非火灾支持度","不确定"];
+        const colors = ["red","blue","orange","green","purple","brown"];
+
+        for(let i = 0; i < 6; i++){
+            if(charts[i]){
+                // 已有图表 → 更新数据
+                charts[i].data.labels = labels;
+                charts[i].data.datasets[0].data = data[i];
+                charts[i].update();
+            } else {
+                // 第一次加载 → 创建图表
+                charts.push(draw("c"+(i+1), names[i], data[i], labels, colors[i]));
+            }
+        }
+    });
+}
+
+// 设置刷新间隔
+setInterval(getData, 5000);     // 顶部数据每15秒刷新
+setInterval(loadCharts, 5000);  // 图表每15秒更新一次，平滑刷新
+
+// 初始化加载一次
 getData();
+loadCharts();
 </script>
 
 </body>
